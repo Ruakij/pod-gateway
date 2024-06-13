@@ -54,7 +54,7 @@ if [[ -n "$SNAT_IP" ]]; then
   iptables -t nat -A POSTROUTING -o "$VPN_INTERFACE" -j SNAT --to "$SNAT_IP"
 else
   echo "Enable Masquerading"
-  iptables -t nat -A POSTROUTING -j MASQUERADE
+  iptables -t nat -A POSTROUTING ! -o vxlan0 -j MASQUERADE
 fi
 
 if [[ -n "$VPN_INTERFACE" ]]; then
