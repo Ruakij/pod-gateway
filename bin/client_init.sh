@@ -14,22 +14,24 @@ if ip addr | grep -q vxlan0; then
   ip link del vxlan0
 else
   K8S_GW_IP=$(/sbin/ip route | awk '/default/ { print $3 }')
+  K8S_GW_IPv6=$(/sbin/ip -6 route | awk '/default/ { print $3 }')
   for local_cidr in $NOT_ROUTED_TO_GATEWAY_CIDRS; do
-    # command might fail if rule already set
-    ip route add "$local_cidr" via "$K8S_GW_IP" || /bin/true
+    if [[ "$local_cidr" == *\.* ]]; then
+      # command might fail if rule already set
+      ip route add "$local_cidr" via "$K8S_GW_IP" || /bin/true
+    elif [[ "$local_cidr" == *:* ]]; then
+      ip -6 route add "$local_cidr" via "$K8S_GW_IPv6" || /bin/true
+    fi
   done
 fi
 
 # Delete default GW to prevent outgoing traffic to leave this docker
 echo "Deleting existing default GWs"
 ip route del 0/0 || /bin/true
-
-# We don't support IPv6 at the moment, so delete default route to prevent leaking traffic.
-echo "Deleting existing default IPv6 route to prevent leakage"
-ip route -6 del default || /bin/true
+ip -6 route del default || /bin/true
 
 # After this point nothing should be reachable -> check
-if ping -c 1 -W 1000 8.8.8.8; then
+if ping -c 1 -W 1 8.8.8.8 || ping6 -c 1 -W 1 2001:4860:4860::8888; then
   echo "WE SHOULD NOT BE ABLE TO PING -> EXIT"
   exit 255
 fi
@@ -43,11 +45,15 @@ K8S_DNS_IP="$(cut -d ' ' -f 1 <<< "$K8S_DNS_IPS")"
 GATEWAY_IP="$(dig +short "$GATEWAY_NAME" "@${K8S_DNS_IP}")"
 NAT_ENTRY="$(grep "^$(hostname) " /config/nat.conf || true)"
 VXLAN_GATEWAY_IP="${VXLAN_IP_NETWORK}.1"
+VXLAN_GATEWAY_IPv6="${VXLAN_IPV6_NETWORK}::1"
 
 # Make sure there is correct route for gateway
 # K8S_GW_IP is not set when script is called again and the route should still exist on the pod anyway.
 if [ -n "$K8S_GW_IP" ]; then
     ip route add "$GATEWAY_IP" via "$K8S_GW_IP"
+fi
+if [[ -n "$K8S_GW_IPv6" ]]; then
+  ip -6 route add "$GATEWAY_IP" via "$K8S_GW_IPv6"
 fi
 
 # For debugging reasons print some info
@@ -90,6 +96,12 @@ interface "vxlan0"
   require routers,
           subnet-mask;
           #domain-name-servers;
+
+  # IPv6 Configuration
+  # Use MAC address as DHCPv6 client ID
+  send dhcp6.client-id = concat(DUID-LL, hardware);
+  request dhcp6.name-servers,
+          dhcp6.domain-search;
  }
 EOF
 
@@ -97,19 +109,24 @@ EOF
 if [[ -z "$NAT_ENTRY" ]]; then
   echo "Get dynamic IP"
   dhclient -v -cf /etc/dhclient.conf vxlan0
+  # IPv6 via SLAAC
 else
   IP=$(cut -d' ' -f2 <<< "$NAT_ENTRY")
   VXLAN_IP="${VXLAN_IP_NETWORK}.${IP}"
-  echo "Use fixed IP $VXLAN_IP"
+  VXLAN_IPv6="${VXLAN_IPV6_NETWORK}::${IP}"
+  echo "Use fixed IP $VXLAN_IP and $VXLAN_IPv6"
   ip addr add "${VXLAN_IP}/24" dev vxlan0
+  ip -6 addr add "${VXLAN_IPv6}/64" dev vxlan0
   route add default gw "$VXLAN_GATEWAY_IP"
+  route -A inet6 add default gw "$VXLAN_GATEWAY_IPv6"
 fi
 
 # For debugging reasons print some info
 ip addr
 ip route
 
-# Check we can connect to the gateway ussing the vxlan device
+# Check we can connect to the gateway using the vxlan device
 ping -c "${CONNECTION_RETRY_COUNT}" "$VXLAN_GATEWAY_IP"
+ping6 -c "${CONNECTION_RETRY_COUNT}" "$VXLAN_GATEWAY_IPv6"
 
 echo "Gateway ready and reachable"

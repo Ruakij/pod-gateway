@@ -14,9 +14,9 @@ if [ ! -f /etc/resolv.conf.org ]; then
   echo "/etc/resolv.conf.org written"
 fi
 
-#Get K8S DNS
-K8S_DNS=$(grep nameserver /etc/resolv.conf.org | cut -d' ' -f2)
-
+#Get K8S DNS servers for IPv4 and IPv6
+K8S_DNS=$(grep -m 1 '^nameserver .*' /etc/resolv.conf.org | grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+')
+K8S_DNS_IPv6=$(grep -m 1 '^nameserver .*' /etc/resolv.conf.org | grep -oE '([a-fA-F0-9:]+:+)+[a-fA-F0-9]+') || true
 
 cat << EOF > /etc/dnsmasq.d/pod-gateway.conf
 # DHCP server settings
@@ -25,6 +25,10 @@ bind-interfaces
 
 # Dynamic IPs assigned to PODs - we keep a range for static IPs
 dhcp-range=${VXLAN_IP_NETWORK}.${VXLAN_GATEWAY_FIRST_DYNAMIC_IP},${VXLAN_IP_NETWORK}.255,12h
+
+# IPv6 Settings using SLAAC
+enable-ra
+dhcp-range=${VXLAN_IPV6_NETWORK}::,ra-names,slaac,64,12h
 
 # For debugging purposes, log each DNS query as it passes through
 # dnsmasq.
@@ -59,6 +63,14 @@ for local_cidr in $DNS_LOCAL_CIDRS; do
   server=/${local_cidr}/${K8S_DNS}
 EOF
 done
+
+if [[ -n "$K8S_DNS_IPv6" ]]; then
+  for local_cidr in $DNS_LOCAL_CIDRS; do
+    cat << EOF >> /etc/dnsmasq.d/pod-gateway.conf
+    server=/${local_cidr}/${K8S_DNS_IPv6}
+EOF
+  done
+fi
 
 # Make a copy of /etc/resolv.conf
 /bin/copy_resolv.sh

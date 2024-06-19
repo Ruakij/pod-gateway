@@ -15,6 +15,8 @@ NOT_ROUTED_TO_GATEWAY_CIDRS=""
 VXLAN_ID="42"
 # VXLAN need an /24 IP range not conflicting with K8S and local IP ranges
 VXLAN_IP_NETWORK="172.16.0"
+# VXLAN need an /64 IPv6 range not conflicting with K8S and local IPv6 ranges
+VXLAN_IPV6_NETWORK="fd16:dead:beef"
 # Keep a range of IPs for static assignment in nat.conf
 VXLAN_GATEWAY_FIRST_DYNAMIC_IP=20
 
@@ -25,7 +27,7 @@ VPN_BLOCK_OTHER_TRAFFIC=true
 # If VPN_BLOCK_OTHER_TRAFFIC is true, allow VPN traffic over this port
 VPN_TRAFFIC_PORT=443
 # Traffic to these IPs will be send through the K8S gateway
-VPN_LOCAL_CIDRS="10.0.0.0/8 192.168.0.0/16"
+VPN_LOCAL_CIDRS="10.0.0.0/8 192.168.0.0/16 fc00::/7"
 
 # DNS queries to these domains will be resolved by K8S DNS instead of
 # the default (typcally the VPN client changes it)
@@ -48,6 +50,7 @@ IPTABLES_NFT=no
 
 # Set to WAN/VPN IP to enable SNAT instead of Masquerading
 SNAT_IP=""
+SNAT_IPV6=""
 
 # Set the VPN MTU. It also adjust the VXLAN MTU to avoid fragmenting the package in the gateway (VXLAN-> MTU)
 VPN_INTERFACE_MTU=""
