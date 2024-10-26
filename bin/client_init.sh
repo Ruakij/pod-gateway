@@ -14,9 +14,22 @@ if ip addr | grep -q vxlan0; then
   ip link del vxlan0
 else
   K8S_GW_IP=$(/sbin/ip route | awk '/default/ { print $3 }')
+  K8S_GW_IPV6=$(/sbin/ip -6 route | awk '/default/ { print $3 }')
   for local_cidr in $NOT_ROUTED_TO_GATEWAY_CIDRS; do
-    # command might fail if rule already set
-    ip route add "$local_cidr" via "$K8S_GW_IP" || /bin/true
+    if [[ "$local_cidr" == *\.* ]]; then
+      if [ -n "$K8S_GW_IP" ]; then
+        # command might fail if rule already set
+        ip route add "$local_cidr" via "$K8S_GW_IP" || /bin/true
+      else
+        echo "No IPv4 gateway IP found. Skipping IPv4 route addition for $local_cidr."
+      fi
+    elif [[ "$local_cidr" == *:* ]]; then
+      if [ -n "$K8S_GW_IPV6" ]; then
+        ip -6 route add "$local_cidr" via "$K8S_GW_IPV6" || /bin/true
+      else
+        echo "No IPv6 gateway IP found. Skipping IPv6 route addition for $local_cidr."
+      fi
+    fi
   done
 fi
 
@@ -29,7 +42,7 @@ echo "Deleting existing default IPv6 route to prevent leakage"
 ip -6 route del default || /bin/true
 
 # After this point nothing should be reachable -> check
-if ping -c 1 -W 1000 8.8.8.8; then
+if ping -c 1 -W 1 8.8.8.8 || ping6 -c 1 -W 1 2001:4860:4860::8888; then
   echo "WE SHOULD NOT BE ABLE TO PING -> EXIT"
   exit 255
 fi
@@ -63,6 +76,7 @@ fi
 # For debugging reasons print some info
 ip addr
 ip route
+ip -6 route
 
 # Check we can connect to the GATEWAY IP
 ping -c "${CONNECTION_RETRY_COUNT}" "$GATEWAY_IP"
