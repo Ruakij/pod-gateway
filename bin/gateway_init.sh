@@ -52,9 +52,11 @@ fi
 if [[ -n "$SNAT_IP" ]]; then
   echo "Enable SNAT"
   iptables -t nat -A POSTROUTING -o "$VPN_INTERFACE" -j SNAT --to "$SNAT_IP"
-else
+elif [[ "${SNAT_MASQ:-true}" == "true" ]]; then
   echo "Enable Masquerading"
-  iptables -t nat -A POSTROUTING -j MASQUERADE
+  iptables -t nat -A POSTROUTING -o "$VPN_INTERFACE" -j MASQUERADE
+else
+  echo "Masquerading disabled"
 fi
 
 if [[ -n "$VPN_INTERFACE" ]]; then

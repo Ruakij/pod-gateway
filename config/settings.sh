@@ -52,6 +52,10 @@ IPTABLES_NFT=no
 
 # Set to WAN/VPN IP to enable SNAT instead of Masquerading
 SNAT_IP=""
+# Set to false to disable SNAT Masquerading.
+# Useful when the upstream VPN client or router already handles NAT.
+# SNAT_IP takes precedence when set.
+SNAT_MASQ=true
 
 # Set the VPN MTU. It also adjust the VXLAN MTU to avoid fragmenting the package in the gateway (VXLAN-> MTU)
 VPN_INTERFACE_MTU=""
